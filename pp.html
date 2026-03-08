@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Camera BG Remover</title>
+</head>
+<body>
+    <h2>Camera Background Remover</h2>
+
+    <!-- Video stream -->
+    <video id="video" width="400" autoplay></video>
+    <br><br>
+
+    <!-- Button to capture -->
+    <button onclick="captureAndSend()">Capture & Remove BG</button>
+    <br><br>
+
+    <!-- Display result -->
+    <h3>Result:</h3>
+    <img id="result" width="400"/>
+
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <script>
+        // Start camera
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                document.getElementById("video").srcObject = stream;
+            } catch (err) {
+                alert("Camera access denied or error: " + err);
+            }
+        }
+
+        startCamera();
+
+        // Capture photo and send to Flask
+        async function captureAndSend() {
+            const video = document.getElementById("video");
+            const canvas = document.getElementById("canvas");
+            const ctx = canvas.getContext("2d");
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+
+            // Convert to blob
+            canvas.toBlob(async function(blob) {
+                const formData = new FormData();
+                formData.append("image", blob, "capture.png");
+
+                try {
+                    const response = await fetch("http://localhost:5000/remove-bg", {
+                        method: "POST",
+                        body: formData
+                    });
+
+                    if (!response.ok) throw new Error("Failed to process image");
+
+                    // Convert response to blob and show
+                    const resultBlob = await response.blob();
+                    const url = URL.createObjectURL(resultBlob);
+                    document.getElementById("result").src = url;
+
+                } catch (err) {
+                    alert("Error: " + err);
+                }
+            }, "image/png");
+        }
+    </script>
+</body>
+</html>
