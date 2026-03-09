@@ -1,89 +1,77 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Camera Capture</title>
-<style>
-video, canvas {
-    width: 400px;
-    border: 1px solid black;
-}
-</style>
+<title>Camera Background Removal</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
 </head>
-
 <body>
 
-<h2>Camera Capture</h2>
+<h2>Camera Capture with Background Removal Preview</h2>
 
-<video id="video" autoplay></video>
-<br><br>
-
-<button onclick="capture()">Capture</button>
-
-<h3>Preview (Background Removed)</h3>
+<video id="video" autoplay playsinline></video>
 <canvas id="canvas"></canvas>
+<br>
+<button onclick="capture()">Capture & Send Original</button>
 
 <script>
-
-// start camera
 const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 
+// Start camera
 navigator.mediaDevices.getUserMedia({video:true})
-.then(stream => {
-    video.srcObject = stream;
-});
+.then(stream => video.srcObject = stream);
 
-// capture image
-function capture(){
+// Setup MediaPipe Selfie Segmentation
+const segmentation = new SelfieSegmentation({locateFile: (file) =>
+  `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`});
+segmentation.setOptions({modelSelection: 1});
+segmentation.onResults(onResults);
 
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d");
-
+// Draw video and remove background
+function onResults(results){
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-    ctx.drawImage(video,0,0);
+    // original image
+    ctx.drawImage(video, 0, 0);
 
-    // get ORIGINAL image blob
-    canvas.toBlob(function(blob){
+    const mask = results.segmentationMask;
 
-        // send original image to server
+    // create background as transparent
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.drawImage(mask, 0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+}
+
+// Continuously send video frames for segmentation
+async function startSegmentation(){
+    const videoFrame = async () => {
+        await segmentation.send({image: video});
+        requestAnimationFrame(videoFrame);
+    }
+    videoFrame();
+}
+startSegmentation();
+
+// Capture original and send to server
+function capture(){
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = video.videoWidth;
+    tempCanvas.height = video.videoHeight;
+    const tempCtx = tempCanvas.getContext("2d");
+    tempCtx.drawImage(video, 0, 0);
+
+    tempCanvas.toBlob(function(blob){
         let formData = new FormData();
         formData.append("image", blob, "capture.png");
 
-        fetch("https://untrenched-zayne-unintensified.ngrok-free.dev/upload",{
-            method:"POST",
-            body:formData
-        });
-
+        fetch("https://untrenched-zayne-unintensified.ngrok-free.dev/upload", {
+            method: "POST",
+            body: formData
+        }).then(()=>alert("success"));
     });
-
-    // simple background removal preview
-    removeBackground(canvas);
 }
-
-
-// simple background removal (color threshold)
-function removeBackground(canvas){
-
-    const ctx = canvas.getContext("2d");
-    const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-    const data = imageData.data;
-
-    for(let i=0;i<data.length;i+=4){
-
-        let r = data[i];
-        let g = data[i+1];
-        let b = data[i+2];
-
-        // remove bright background
-        if(r>200 && g>200 && b>200){
-            data[i+3] = 0;
-        }
-    }
-
-    ctx.putImageData(imageData,0,0);
-}
-
 </script>
 
 </body>
